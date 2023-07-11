@@ -3,7 +3,7 @@ import io
 import urllib
 import zipfile
 
-from utils.BaseUtils import BaseClass, AWSKeyspaceManager
+from src.utils.BaseUtils import BaseClass, AWSKeyspaceManager
 
 import requests
 from bs4 import BeautifulSoup
