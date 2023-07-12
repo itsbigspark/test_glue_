@@ -14,11 +14,11 @@ setuptools.setup(
     description="Business screening",
     url="https://github.com/itsbigspark/test_glue",
     maintainer="Business screening",
-    license="Proprietary",
     include_package_data=True,
     long_description="Business screening",
     packages=setuptools.find_namespace_packages(
         include=[
+            "src",
             "src.utils",
         ]
     ),

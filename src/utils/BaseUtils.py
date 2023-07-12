@@ -1,3 +1,4 @@
+import os
 import logging as logger
 from configparser import ConfigParser
 from ssl import CERT_REQUIRED, PROTOCOL_TLSv1_2, SSLContext
@@ -70,10 +71,15 @@ class BaseClass:
         self.query_keyspaces(conn, query)
 
 
+def get_path():
+    return os.path.realpath(os.path.join(os.path.dirname(__file__), '../..'))
+
+
 class AWSKeyspaceManager:
     def __init__(self):
         ssl_context = SSLContext(PROTOCOL_TLSv1_2)
-        ssl_context.load_verify_locations("sf-class2-root.crt")
+        path = os.path.join(get_path(), "src", "sf-class2-root.crt")
+        ssl_context.load_verify_locations(path)
         ssl_context.verify_mode = CERT_REQUIRED
 
         # use this if you want to use Boto to set the session parameters.
@@ -107,7 +113,8 @@ class AWSKeyspaceManager:
 
 def get_config():
     _config = ConfigParser()
-    _config.read('config.ini')
+    path = os.path.join(get_path(), "src", "config.ini")
+    _config.read(path)
     return _config
 
 
