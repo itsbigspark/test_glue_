@@ -9,7 +9,7 @@ with open(requirement_path, "r", encoding="UTF-8") as f:
     requirements = f.read().splitlines()
 
 setuptools.setup(
-    name="test-glue-job",
+    name="test_glue_job",
     version="0.1.1",
     description="Business screening",
     url="https://github.com/itsbigspark/test_glue",
@@ -23,7 +23,7 @@ setuptools.setup(
         ]
     ),
     package_data={
-        "src": ["config.ini"],
+        "src": ["config.ini", "*.crt"],
     },
     install_requires=requirements,
 )
