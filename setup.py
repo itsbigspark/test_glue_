@@ -10,7 +10,7 @@ with open(requirement_path, "r", encoding="UTF-8") as f:
 
 setuptools.setup(
     name="test_glue_job",
-    version="0.1.1",
+    version="0.1.2",
     description="Business screening",
     url="https://github.com/itsbigspark/test_glue",
     maintainer="Business screening",
@@ -20,6 +20,7 @@ setuptools.setup(
         include=[
             "src",
             "src.utils",
+            "src.models",
         ]
     ),
     package_data={
