@@ -1,17 +1,13 @@
-import os
 import io
-import logging as logger
 import requests
 import urllib
 import zipfile
-from configparser import ConfigParser
-from ssl import CERT_REQUIRED, PROTOCOL_TLSv1_2, SSLContext
-from cassandra import ConsistencyLevel
-from cassandra.cluster import Cluster
-from cassandra.query import SimpleStatement
-from cassandra_sigv4.auth import SigV4AuthProvider
 from datetime import datetime
 from bs4 import BeautifulSoup
+import pandas as pd
+from src.models.AuditLogsModel import AuditLogs
+from src.utils.Keyspace_helper import AWSKeyspaceManager, query_keyspaces
+from src.utils.Common_helpers import get_logger, get_config
 
 import boto3
 
@@ -21,9 +17,6 @@ class BaseClass:
         self.config = get_config()
         self.logger = get_logger()
         self.config_for = config_for
-        self.aws_access_key_id = self.config.get("aws", "aws_access_key_id", fallback=None)
-        self.aws_secret_access_key = self.config.get("aws", "aws_secret_access_key", fallback=None)
-        self.region_name = self.config.get("aws", "region_name", fallback=None)
         self.bucket_name = self.config.get("aws", "bucket_name", fallback=None)
         self.web_root = self.config.get(config_for, "web_root", fallback=None)
         self.url = self.config.get(config_for, "entity_url", fallback=None)
@@ -32,6 +25,8 @@ class BaseClass:
         self.keyspace_key = self.config.get(config_for, "keyspace_key", fallback=None)
         self.keyspace_table = self.config.get("general", "keyspace_table", fallback=None)
         self.keyspace_name = self.config.get("general", "keyspace_name", fallback=None)
+        self.audit_logs = AuditLogs()
+        self.audit_logs.source_name = self.config.get(config_for, "source_name", fallback=None)
 
     def get_updated_date(self):
         """Get the last updated date from the website"""
@@ -105,6 +100,28 @@ class BaseClass:
             )
             self.uploading_to_s3(link, folder_name)
 
+    def verify_upload_to_s3(self, folder_name):
+        objs = self.get_list_of_s3_objs(self.bucket_name, f"{self.bucket_prefix}{folder_name}")
+        for obj in objs:
+            if ".csv" in obj["Key"]:
+                print(obj["Key"])
+                self.read_from_s3(obj["Key"])
+        pass
+
+    def read_from_s3(self, key):
+        response = self.get_s3_client().get_object(Bucket=self.bucket_name, Key=key)
+
+        status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+
+        if status == 200:
+            print(f"Successful S3 get_object response. Status - {status}")
+            books_df = pd.read_csv(response.get("Body"))
+            print(books_df)
+            import sys
+            sys.exit()
+        else:
+            print(f"Unsuccessful S3 get_object response. Status - {status}")
+
     def uploading_to_s3(self, data_link, folder_name):
         try:
             open_url_response = urllib.request.urlopen(data_link)
@@ -112,15 +129,15 @@ class BaseClass:
             for zip_file in zip_files.namelist():
                 with zip_files.open(zip_file) as f:
                     if folder_name:
-                        final_key = f"{self.bucket_prefix}{folder_name}/{zip_file}"
+                        self.final_key = f"{self.bucket_prefix}{folder_name}/{zip_file}"
                     else:
-                        final_key = f"{self.bucket_prefix}{zip_file}"
-                    print(final_key)
+                        self.final_key = f"{self.bucket_prefix}{zip_file}"
+                    print(self.final_key)
                     # Upload the CSV file to S3
                     self.get_s3_client().upload_fileobj(
                         Fileobj=f,
                         Bucket=self.bucket_name,
-                        Key=final_key,
+                        Key=self.final_key,
                     )
                     self.logger.info(f"Upload successful: {zip_file}")
             self.logger.info("File Uploaded Successfully ")
@@ -129,11 +146,7 @@ class BaseClass:
             self.logger.error("Error in uploading_to_aws", err)
 
     def get_boto_session(self):
-        return boto3.Session(
-            aws_access_key_id=self.aws_access_key_id,
-            aws_secret_access_key=self.aws_secret_access_key,
-            region_name=self.region_name,
-        )
+        return boto3.Session()
 
     def get_list_of_s3_objs(self, bucket_name=None, prefix=None):
         s3_client = self.get_s3_client()
@@ -142,9 +155,13 @@ class BaseClass:
             bucket_name = self.bucket_name
         if not prefix:
             prefix = self.bucket_prefix
+        print(f"Bucket Name: {bucket_name}")
+        print(f"Bucket Prefix: {prefix}")
+        objs_list = []
         for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
             for obj in page.get("Contents", []):
-                print(obj["Key"])
+                objs_list.append(obj)
+        return objs_list
 
     def get_s3_client(self):
         return self.get_boto_session().client("s3")
@@ -152,21 +169,10 @@ class BaseClass:
     def get_s3_resource(self):
         return self.get_boto_session().resource("s3")
 
-    def _query_keyspaces(self, conn, query):
-        try:
-            result = conn.execute(
-                SimpleStatement(query, consistency_level=ConsistencyLevel.LOCAL_QUORUM)
-            )
-            self.logger.info(f"query submitted successfully {query}")
-            return result
-        except Exception as err:
-            message = f"Error occurred while connecting/querying to aws keyspace: {err}"
-            self.logger.error(message)
-
     def get_latest_date(self):
         query = f"SELECT last_batch FROM {self.keyspace_name}.{self.keyspace_table} WHERE key='{self.keyspace_key}';"
         with AWSKeyspaceManager() as conn:
-            results = self._query_keyspaces(conn, query)
+            results = query_keyspaces(conn, query)
         if results.current_rows[0][0]:
             return results.current_rows[0][0]
 
@@ -174,63 +180,11 @@ class BaseClass:
         query = f"""UPDATE {self.keyspace_name}.{self.keyspace_table} SET last_batch='{value}'
                      WHERE key='{self.keyspace_key}';"""
         with AWSKeyspaceManager() as conn:
-            self._query_keyspaces(conn, query)
+            query_keyspaces(conn, query)
 
     def insert_new_key(self, key, value=None):
         if not value:
             value = "2023-01-01 00:00:00"
         query = f"""INSERT INTO {self.keyspace_name}.{self.keyspace_table} (key, last_batch) VALUES ('{key}','{value}');"""
         with AWSKeyspaceManager() as conn:
-            self._query_keyspaces(conn, query)
-
-
-def get_path():
-    return os.path.realpath(os.path.join(os.path.dirname(__file__), '../..'))
-
-
-class AWSKeyspaceManager:
-    def __init__(self):
-        ssl_context = SSLContext(PROTOCOL_TLSv1_2)
-        path = os.path.join(get_path(), "src", "sf-class2-root.crt")
-        ssl_context.load_verify_locations(path)
-        ssl_context.verify_mode = CERT_REQUIRED
-
-        # use this if you want to use Boto to set the session parameters.
-        auth_provider = SigV4AuthProvider(self._get_aws_client())
-        self.cluster = Cluster(
-            ["cassandra.eu-west-1.amazonaws.com"],
-            ssl_context=ssl_context,
-            auth_provider=auth_provider,
-            port=9142,
-        )
-
-    def _get_aws_client(self):
-        self.config = get_config()
-        self.logger = get_logger()
-        aws_access_key_id = self.config.get("aws", "aws_access_key_id", fallback=None)
-        aws_secret_access_key = self.config.get("aws", "aws_secret_access_key", fallback=None)
-        region_name = self.config.get("aws", "region_name", fallback=None)
-        return boto3.Session(
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            region_name=region_name,
-        )
-
-    def __enter__(self):
-        self.connection = self.cluster.connect()
-        return self.connection
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.connection.shutdown()
-
-
-def get_config():
-    _config = ConfigParser()
-    path = os.path.join(get_path(), "src", "config.ini")
-    _config.read(path)
-    return _config
-
-
-def get_logger():
-    logger.basicConfig(level=logger.INFO)
-    return logger
+            query_keyspaces(conn, query)

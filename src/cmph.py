@@ -41,8 +41,9 @@ class CMPH(BaseClass):
         print(f"last_date: {last_date}")
         if current_date > last_date:
             folder_name = current_date.strftime("%Y%m%d")
-            links = self.get_download_links()
-            self.put_data_to_s3(links, folder_name)
+            # links = self.get_download_links()
+            # self.put_data_to_s3(links, folder_name)
+            self.verify_upload_to_s3(folder_name)
             print("Yes")
         else:
             print("No")
