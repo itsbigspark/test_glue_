@@ -6,7 +6,6 @@ urllib3
 pyarrow
 fastparquet
 s3fs
-os
 setuptools
 datetime
 random
