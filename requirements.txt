@@ -6,9 +6,4 @@ urllib3
 pyarrow
 fastparquet
 s3fs
-setuptools
-datetime
-random
-string
 pandas
-zipfile
