@@ -14,4 +14,4 @@ jobs:
        - uses: pypa/gh-action-pip-audit@v1.0.8
          with:
           local: true
-      
+          inputs: requirements.txt

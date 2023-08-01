@@ -6,3 +6,11 @@ urllib3
 pyarrow
 fastparquet
 s3fs
+os
+setuptools
+datetime
+random
+string
+pandas
+zipfile
+logging
